@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CT Scan Visualizations</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="container">
+    <h1>CT Scan Visualizations</h1>
+    <div class="slider">
+        <label for="binCount">Number of Bins</label>
+        <input type="range" id="binCount" min="2" max="20" value="10" step="1" />
+
+        <label for="minThreshold">Minimum Threshold</label>
+        <input type="range" id="minThreshold" min="0" max="100" value="0" />
+
+        <label for="maxThreshold">Maximum Threshold</label>
+        <input type="range" id="maxThreshold" min="0" max="1000" value="300" />
+    </div>
+
+    <hr />
+    <div id="loading" style="display: none;">
+        <div class="spinner"></div>
+        Loading...
+    </div>
+    <div class="main">
+        <div id="files_container">
+            <select id="files" name="file" size="10" multiple></select>
+        </div>
+        <div class="canvas">
+            <svg viewBox="-5 -10 270 270"></svg>
+        </div>
+    </div>
+</div>
+
+<script>
+    const svgElement = d3.select("svg");
+    const geoPath = d3.geoPath();
+    let currentBins = parseInt(document.querySelector("#binCount").value);
+    let minThreshold = parseFloat(document.querySelector("#minThreshold").value);
+    let maxThreshold = parseFloat(document.querySelector("#maxThreshold").value);
+    let frameId;
+
+    function renderContour(fileName) {
+        document.getElementById("loading").style.display = "block";
+
+        d3.json("dicomData/" + fileName).then(data => {
+            svgElement.selectAll("*").remove();
+
+            const values = [];
+            data.forEach(col => col.forEach(value => values.push(+value)));
+
+            const [minValue, maxValue] = d3.extent(values);
+            updateThresholdLimits(minValue, maxValue);
+
+            minThreshold = Math.max(minThreshold, minValue);
+            maxThreshold = Math.min(maxThreshold, maxValue);
+
+            function drawContour(bins, minThresh, maxThresh) {
+                const colorScale = d3.scaleLinear()
+                    .domain([minThresh, (minThresh + maxThresh) / 2, maxThresh])
+                    .range(["#0d1a50", "#abdda4", "#ff0000"]) // Dark Blue, Light Green, Red
+                    .interpolate(d3.interpolateRgb);
+
+                const thresholds = d3.range(minThresh, maxThresh, (maxThresh - minThresh) / bins);
+                const contours = d3.contours()
+                    .size([256, 256])
+                    .thresholds(thresholds)(values);
+
+                svgElement.append("g")
+                    .attr("class", "contours")
+                    .selectAll("path")
+                    .data(contours)
+                    .enter()
+                    .append("path")
+                    .attr("d", d => geoPath(d))
+                    .attr("stroke", "black")
+                    .attr("stroke-width", ".1px")
+                    .attr("stroke-linejoin", "round")
+                    .attr("fill", d => colorScale(d.value));
+
+                document.getElementById("loading").style.display = "none";
+            }
+
+            drawContour(currentBins, minThreshold, maxThreshold);
+
+            // Smooth updates for sliders
+            document.querySelector("#binCount").addEventListener("input", updatePlot);
+            document.querySelector("#minThreshold").addEventListener("input", updatePlot);
+            document.querySelector("#maxThreshold").addEventListener("input", updatePlot);
+
+            function updatePlot() {
+                if (frameId) {
+                    cancelAnimationFrame(frameId);
+                }
+                frameId = requestAnimationFrame(() => {
+                    currentBins = parseInt(document.querySelector("#binCount").value);
+                    minThreshold = parseFloat(document.querySelector("#minThreshold").value);
+                    maxThreshold = parseFloat(document.querySelector("#maxThreshold").value);
+                    drawContour(currentBins, minThreshold, maxThreshold);
+                });
+            }
+        }).catch(error => {
+            console.error("Failed to load data:", error);
+        });
+    }
+
+    initializeFileList();
+    renderContour("brain_001.dcm.json");
+
+    function initializeFileList() {
+        const files = [
+            "brain_001.dcm.json", "brain_002.dcm.json", "brain_003.dcm.json", 
+            "brain_004.dcm.json", "brain_005.dcm.json", "brain_006.dcm.json", 
+            "brain_007.dcm.json", "brain_008.dcm.json", "brain_009.dcm.json", 
+            "brain_010.dcm.json", "brain_011.dcm.json", "brain_012.dcm.json", 
+            "brain_013.dcm.json", "brain_014.dcm.json", "brain_015.dcm.json", 
+            "brain_016.dcm.json", "brain_017.dcm.json", "brain_018.dcm.json", 
+            "brain_019.dcm.json", "brain_020.dcm.json"
+        ];
+
+        const fileSelect = d3.select("#files");
+        fileSelect.selectAll("option")
+            .data(files)
+            .enter()
+            .append("option")
+            .text(d => d);
+
+        fileSelect.on("change", () => {
+            const selectedFile = fileSelect.property("value");
+            renderContour(selectedFile);
+        });
+
+        fileSelect.attr("size", files.length);
+    }
+
+    function updateThresholdLimits(min, max) {
+        document.querySelector("#minThreshold").min = min;
+        document.querySelector("#minThreshold").max = max;
+        document.querySelector("#maxThreshold").min = min;
+        document.querySelector("#maxThreshold").max = max;
+    }
+</script>
+</body>
+</html>
